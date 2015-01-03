@@ -32,6 +32,7 @@ class AppConfig(object):
     def __init__(self):
         self.verbosity = 0
         self.repository = None
+        self.always_yes = False
 
     def in_repository(self):
         if not self.repository:
@@ -45,7 +46,7 @@ appconfig = AppConfig()
 """Global application config"""
 
 
-# region stanta's helper
+# region santa's helper
 
 class NotInRepositoryError(BaseException): pass
 
@@ -67,11 +68,12 @@ def store_yaml(obj, filename):
 
     try: # safety first, do not open file before we can safely dump
         s = StringIO.StringIO()
+
         yaml.dump(obj, s)
 
         with file(filename, 'w') as fp:
-            fp.write(str(s))
-    except:
+            fp.write(s.getvalue())
+    except IOError:
         raise
 
 
@@ -86,7 +88,7 @@ def get_repo_config(repository = None, filename = None):
 
     config = read_yaml(filename)
 
-    if config['repo_layout_version'] != REPO_LAYOUT_VERSION_SUPPORTED:
+    if int(config['repo_layout_version']) != REPO_LAYOUT_VERSION_SUPPORTED:
         error("Repository layout version is not %d" % REPO_LAYOUT_VERSION_SUPPORTED)
         sys.exit(1)
 
@@ -124,8 +126,8 @@ def get_package_config(name=None, folder=None):
     def prefix_paths(prefix, seq):
         return map(lambda x: (prefix / x).abspath(), seq)
 
-    def prefix_paths_inplace(map, key):
-        map[key] = prefix_paths(folder.abspath(), map.get(key, []))
+    def prefix_paths_inplace(config, key):
+        config[key] = prefix_paths(folder.abspath(), config.get(key, []))
 
     if name:
         folder = appconfig.repository / name
@@ -158,40 +160,59 @@ def get_packages():
         error("Not in a repository")
 # endregion
 
+def ask_yes_no(prompt, default = True):
+    if appconfig.always_yes:
+        return default
+    else:
+        d = "Yn" if default else "yN"
+        val = click.prompt(prompt+" [%s]" % d)
+
+        if val in ('y', 'Y'):
+            return True
+        elif val in ('n','N'):
+            return False
+        else:
+            return default
 
 @click.group()
 @click.option("-v", "--verbose", count=True)
 @click.option("-r", "--repository", help="give a path to an repository", type=path)
-def cli(verbose=0, repository=None):
-    global appconfig
+@click.option("-y", "--always-yes/--always-no", default=False)
+def cli(verbose=0, repository=None, always_yes = False):
     appconfig.verbosity = verbose
+    appconfig.always_yes = always_yes
     if repository:
         appconfig.repository = path(repository).abspath()
     else:
         try:
             appconfig.repository = path(os.environ['MSML_REPOSITORY']).abspath()
-        except:
+        except KeyError:
             appconfig.repository = None
 
 @click.command()
 @click.argument("name")
-def new_package(name):
+@click.pass_context
+def new_package(ctx, name):
     """creates a new user package.
 
     """
 
+
+    p = path(name).abspath()
+    curdir = path(".").abspath()
+
     try:
-        os.mkdir(name)
-        os.chdir(name)
+        os.mkdir(p)
+        os.chdir(p)
         execute("git init")
         execute("git remote add base {repo}", repo=EMPTY_USER_PACKAGE)
         execute("git pull base master")
-        os.chdir("..")
+
+        os.chdir(curdir)
 
         if appconfig.in_repository():
-            yes_no = click.prompt("Activate user package %s" % name, default="y", type=bool, show_default=True)
-            if yes_no:
-                activate_package(name)
+            if ask_yes_no("Activate user package %s" % name):
+                ctx.invoke(activate_package, filepath=p)
     except OSError:
         click.echo(click.style("Folder '%s' already exists!" % name, fg='red'), err=True)
 
@@ -206,12 +227,14 @@ def activate_package(filepath):
         warning("The folder '%s' does not exists!")
 
     l = config.get('packages', list())
+    if l is None:
+        l = list()
     try:
         if fp not in l:  # no duplicates
             l.append(str(fp))
         else:
             warning("%s already in the list of active packages" % filepath)
-    except:  # not a list
+    except AttributeError:  # not a list
         l = [fp]
 
     config['packages'] = l
@@ -233,7 +256,7 @@ def deactivate_package(filepath):
         config['packages'] = filter(
             lambda x: path(x).abspath() != fp, l
         )
-    except:
+    except TypeError:
         error("Wrong data type detected!")
         raise
 
