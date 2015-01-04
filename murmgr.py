@@ -25,6 +25,13 @@ MSML_REPO_CONFIG = "msml-repo.yaml"
 MSML_PACKAGE_CONFIG = "msml-package.yaml"
 ""
 
+DOC ="""
+
+"""
+
+
+
+
 import yaml.representer
 yaml.add_representer(path, yaml.representer.SafeRepresenter.represent_unicode)
 
@@ -188,6 +195,11 @@ def cli(verbose=0, repository=None, always_yes = False):
             appconfig.repository = path(os.environ['MSML_REPOSITORY']).abspath()
         except KeyError:
             appconfig.repository = None
+
+@click.command()
+def help():
+    "show a detail and long help message"
+    click.echo_via_pager(DOC)
 
 @click.command()
 @click.argument("name")
