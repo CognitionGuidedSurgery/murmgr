@@ -9,7 +9,7 @@ management of MSML user packages and repositories
 :Author: Alexander Weigl <alexander.weigl@student.kit.edu>
 :Date:   2015-01-03
 :Copyright: gplv3
-:Version: 1.0.0-beta
+:Version: 1.0.0-betals
 :Manual section: 1
 :Manual group: MSML tools
 
